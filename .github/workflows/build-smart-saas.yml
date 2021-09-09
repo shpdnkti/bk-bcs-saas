@@ -33,7 +33,7 @@ jobs:
       id: build-frontend
       shell: bash
       run: | 
-        cd ${GITHUB_WORKSPACE}/bk-bcs-saas/bcs-app/frontend
+        cd ${GITHUB_WORKSPACE}/bcs-app/frontend
         npm install && npm run build:ce
         mkdir -p /tmp/release
         tar czf /tmp/release/${APP_CODE}_ui_V${VERSION}.tar.gz frontend
@@ -50,7 +50,7 @@ jobs:
     - name: Build SaaS
       shell: bash
       run: |
-        APP="${WORKSPACE}/app"
+        APP="${GITHUB_WORKSPACE}/app"
         BCS_APP_PATH=${GITHUB_WORKSPACE}/paas-backend/bk-bcs-saas/bcs-app
         cp -rf $BCS_APP_PATH/backend $APP/backend
         cp -rf $BCS_APP_PATH/manage.py $APP
