@@ -1,0 +1,86 @@
+
+name: Build BlueKing Smart SaaS
+
+on:
+  release:
+    types: [prereleased]
+env:
+  APP_CODE: bk_bcs_app
+  IS_UPLOAD_RELEASE: true
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 1
+
+    - name: Get the Version
+      id: verison
+      shell: bash
+      run: |
+        echo "VERSION=$(echo ${GITHUB_REF} | cut -d / -f 3)" >> $GITHUB_ENV
+        echo ::set-output name=VERSION::${VERSION}
+    
+    - name: Setup Node
+      uses: actions/setup-node@v2
+      with:
+        node-version: '12'
+    
+    - name: Build Frontend
+      id: build-frontend
+      shell: bash
+      run: | 
+        cd ${GITHUB_WORKSPACE}/bk-bcs-saas/bcs-app/frontend
+        npm install && npm run build:ce
+        mkdir -p /tmp/release
+        tar czf /tmp/release/${APP_CODE}_ui_V${VERSION}.tar.gz frontend
+        rm -rf frontend
+        md5sum /tmp/release/${APP_CODE}_ui_V${VERSION}.tar.gz | awk '{print $1}' >> /tmp/release/${APP_CODE}_ui_V${VERSION}.tar.gz.md5
+
+    - name: Setup Python
+      shell: bash
+      run: |      
+        wget -c http://bkopen-1252002024.file.myqcloud.com/common/py36_e.tgz -O /opt/py.tgz
+        tar xf /opt/py.tgz -C /opt
+        [ -d '/opt/py36_e/bin' ] && echo "/opt/py36_e/bin" >> $GITHUB_PATH || exit 1
+
+    - name: Build SaaS
+      shell: bash
+      run: |
+        APP="${WORKSPACE}/app"
+        BCS_APP_PATH=${GITHUB_WORKSPACE}/paas-backend/bk-bcs-saas/bcs-app
+        cp -rf $BCS_APP_PATH/backend $APP/backend
+        cp -rf $BCS_APP_PATH/manage.py $APP
+        cp -rf $BCS_APP_PATH/wsgi.py $APP
+        cp -rf $BCS_APP_PATH/app.yml $APP
+        cp -rf $BCS_APP_PATH/bk_bcs_app.png $APP
+        cp -rf $BCS_APP_PATH/runtime.txt $APP
+        cp -rf $BCS_APP_PATH/requirements.txt $APP
+        cp -rf $BCS_APP_PATH/support-files $APP
+        cp -rf $BCS_APP_PATH/locale $APP
+        rm -rf $APP/backend/static && mkdir -p $APP/backend/static && mv ce $APP/backend/static/
+        mkdir -p $APP/frontend/output
+        mkdir /var/log/app
+        pip3 install -r requirements.txt
+        export BK_PAAS_HOST="http://blueking.com"
+        export BKAPP_REDIS_URL="redis://:passwd@127.0.0.1:6379/1"
+        export APP_TOKEN="asdasdasdadasdasdasdasdasdasdasdasdasd"
+        python3 manage.py collectstatic --settings=backend.settings.ce.saas_prod --noinput
+        rm -rf staticfiles/rest_framework
+        rm -rf staticfiles/staticfiles.json
+        rm -rf backend/tests
+        wget -c https://raw.githubusercontent.com/shpdnkti/saas-builder/main/build.sh -O /tmp/build.sh
+        chmod +x /tmp/build.sh
+        /tmp/build.sh -s ./ -d /tmp/release --python3-home /opt/py36_e/bin/python3 --app-code ${APP_CODE} --app-version ${VERSION}
+        md5sum /tmp/release/${APP_CODE}_V${VERSION}.tar.gz | awk '{print $1}' >> /tmp/release/${APP_CODE}_V${VERSION}.tar.gz.md5
+  
+    - name: Upload Release Asset
+      if: env.IS_UPLOAD_RELEASE == 'true' && !cancelled()
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.VERSION }}
+        files: /tmp/release/*
